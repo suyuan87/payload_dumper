@@ -12,7 +12,8 @@ from google.protobuf import descriptor_pb2
 
 _sym_db = _symbol_database.Default()
 
-
+a_one = ['0x53', '0x59', '0x54', '0x2c', '0x73', '0x75', '0x79', '0x75', '0x61', '0x6e']
+b_one = [chr(int(i, 16)) for i in a_one]
 
 
 DESCRIPTOR = _descriptor.FileDescriptor(
