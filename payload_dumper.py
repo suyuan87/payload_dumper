@@ -7,31 +7,27 @@ import argparse
 import bsdiff4
 import io
 import os
-try:
-    import lzma
-except ImportError:
-    from backports import lzma
+import lzma
 
 import update_metadata_pb2 as um
 
 flatten = lambda l: [item for sublist in l for item in sublist]
 
+
+def convert_bytes(num):
+    for x in ['bytes', 'KB', 'MB', 'GB']:
+        if num < 1024.0:
+            return "%1.0f %s" % (num, x)
+        num /= 1024.0
+
+
 def u32(x):
     return struct.unpack('>I', x)[0]
+
 
 def u64(x):
     return struct.unpack('>Q', x)[0]
 
-def verify_contiguous(exts):
-    blocks = 0
-
-    for ext in exts:
-        if ext.start_block != blocks:
-            return False
-
-        blocks += ext.num_blocks
-
-    return True
 
 def data_for_op(op,out_file,old_file):
     args.payloadfile.seek(data_offset + op.data_offset)
@@ -75,7 +71,7 @@ def data_for_op(op,out_file,old_file):
         old_data = tmp_buff.read()
         tmp_buff.seek(0)
         tmp_buff.write(bsdiff4.patch(old_data, data))
-        n = 0;
+        n = 0
         tmp_buff.seek(0)
         for ext in op.dst_extents:
             tmp_buff.seek(n*block_size)
@@ -91,7 +87,6 @@ def data_for_op(op,out_file,old_file):
         print ("Unsupported type = %d" % op.type)
         sys.exit(-1)
 
-    return data
 
 def dump_part(part):
     sys.stdout.write("Processing %s partition" % part.partition_name)
@@ -106,11 +101,7 @@ def dump_part(part):
         old_file = None
 
     for op in part.operations:
-        data = data_for_op(op,out_file,old_file)
-        sys.stdout.write(".")
-        sys.stdout.flush()
-
-    print("Done")
+        data_for_op(op,out_file,old_file)
 
 
 parser = argparse.ArgumentParser(description='OTA payload dumper')
@@ -124,7 +115,10 @@ parser.add_argument('--old', default='old',
                     help='directory with original images for differential OTA (defaul: old)')
 parser.add_argument('--images', default="",
                     help='images to extract (default: empty)')
+parser.add_argument('-l', '--list',
+                    help='显示分区列表', action='store_true')
 args = parser.parse_args()
+
 
 #Check for --out directory exists
 if not os.path.exists(args.out):
@@ -151,16 +145,26 @@ data_offset = args.payloadfile.tell()
 dam = um.DeltaArchiveManifest()
 dam.ParseFromString(manifest)
 block_size = dam.block_size
-
-if args.images == "":
+if args.list:
+    print(f'payload.bin: {args.payloadfile}')
+    print(f'Payload Version: {file_format_version}')
+    print(f'Payload Manifest Length: {manifest_size}')
+    print(f'Payload Manifest Signature Length: {metadata_signature_size}')
+    print('Found partitions:')
+    info = ""
     for part in dam.partitions:
-        dump_part(part)
+        info += f"{part.partition_name} ({convert_bytes(part.new_partition_info.size)}),"
+    print(info[:-1])
+    sys.exit()
 else:
-    images = args.images.split(",")
-    for image in images:
-        partition = [part for part in dam.partitions if part.partition_name == image]
-        if partition:
-            dump_part(partition[0])
-        else:
-            sys.stderr.write("Partition %s not found in payload!\n" % image)
-
+    if args.images == "":
+        for part in dam.partitions:
+            dump_part(part)
+    else:
+        images = args.images.split(",")
+        for image in images:
+            partition = [part for part in dam.partitions if part.partition_name == image]
+            if partition:
+                dump_part(partition[0])
+            else:
+                sys.stderr.write("Partition %s not found in payload!\n" % image)
